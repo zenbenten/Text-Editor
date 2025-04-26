@@ -11,17 +11,47 @@
 #include <cstring>
 #include <cerrno>
 #include <string>
+#include <cstdlib>
+#include <cctype>
 
-// Global variables
 int changed = 0;
 int loading = 0;
 char filename[256] = "";
 Fl_Text_Buffer textbuf;
+Fl_Text_Buffer stylebuf;
 
-// Forward declarations
+Fl_Text_Display::Style_Table_Entry styletable[] = {
+  { FL_BLACK,      FL_COURIER,        14 },
+  { FL_DARK_GREEN, FL_COURIER_ITALIC, 14 },
+  { FL_DARK_GREEN, FL_COURIER_ITALIC, 14 },
+  { FL_BLUE,       FL_COURIER,        14 },
+  { FL_DARK_RED,   FL_COURIER,        14 },
+  { FL_DARK_RED,   FL_COURIER_BOLD,   14 },
+  { FL_BLUE,       FL_COURIER_BOLD,   14 }
+};
+
+const char *code_keywords[] = {
+  "and", "and_eq", "asm", "auto", "bitand", "bitor", "bool", "break",
+  "case", "catch", "char", "class", "compl", "const", "const_cast",
+  "continue", "default", "delete", "do", "double", "dynamic_cast", "else",
+  "enum", "explicit", "export", "extern", "false", "float", "for",
+  "friend", "goto", "if", "inline", "int", "long", "mutable", "namespace",
+  "new", "not", "not_eq", "operator", "or", "or_eq", "private",
+  "protected", "public", "register", "reinterpret_cast", "return",
+  "short", "signed", "sizeof", "static", "static_cast", "struct",
+  "switch", "template", "this", "throw", "true", "try", "typedef",
+  "typeid", "typename", "union", "unsigned", "using", "virtual", "void",
+  "volatile", "wchar_t", "while", "xor", "xor_eq"
+};
+
+const char *code_types[] = {
+  "Fl_Widget", "Fl_Window", "Fl_Double_Window", "Fl_Gl_Window",
+  "Fl_Button", "Fl_Input", "Fl_Text_Editor", "Fl_Text_Buffer",
+  "Fl_Menu_Bar", "Fl_File_Chooser"
+};
+
 class EditorWindow;
 
-// Callback Prototypes
 void changed_cb(int, int, int, int, const char*, void*);
 void copy_cb(Fl_Widget*, void*);
 void cut_cb(Fl_Widget*, void*);
@@ -39,14 +69,15 @@ void replcan_cb(Fl_Widget*, void*);
 void save_cb(Fl_Widget*, void*);
 void saveas_cb(Fl_Widget*, void*);
 
-// Helper Function Prototypes
 void set_title(EditorWindow* w);
 int check_save();
 void load_file(const char *newfile, int ipos = -1);
 void save_file(const char *newfile);
 
+void style_parse(const char *text, char *style, int length);
+void style_update(int pos, int nInserted, int nDeleted, int nRestyled, const char *deletedText, void *cbArg);
+int compare_keywords(const void *p1, const void *p2);
 
-// EditorWindow Class Definition 
 class EditorWindow : public Fl_Double_Window {
 public:
     EditorWindow(int w, int h, const char* title);
@@ -64,8 +95,6 @@ public:
 
     char search[256];
 };
-
-//Callback Implementations
 
 void changed_cb(int, int nInserted, int nDeleted, int, const char*, void* v) {
     if ((nInserted || nDeleted) && !loading) changed = 1;
@@ -122,6 +151,8 @@ void new_cb(Fl_Widget*, void* v) {
     filename[0] = '\0';
     textbuf.select(0, textbuf.length());
     textbuf.remove_selection();
+    stylebuf.select(0, stylebuf.length());
+    stylebuf.remove_selection();
     changed = 0;
     textbuf.call_modify_callbacks();
 }
@@ -224,9 +255,6 @@ void saveas_cb(Fl_Widget*, void*) {
     }
 }
 
-
-//Helper Functions
-
 void set_title(EditorWindow* w) {
     if (!w) return;
     std::string title;
@@ -267,7 +295,11 @@ void load_file(const char *newfile, int ipos) {
     int insert = (ipos != -1);
     if (!insert) strcpy(filename, "");
 
-    if (textbuf.loadfile(newfile)) {
+    int r;
+    if (!insert) r = textbuf.loadfile(newfile);
+    else r = textbuf.insertfile(newfile, ipos);
+
+    if (r) {
         fl_alert("Error reading from file \'%s\':\n%s.", newfile, strerror(errno));
     } else {
         if (!insert) strcpy(filename, newfile);
@@ -275,6 +307,17 @@ void load_file(const char *newfile, int ipos) {
     changed = insert;
     loading = 0;
     textbuf.call_modify_callbacks();
+
+    stylebuf.select(0, stylebuf.length());
+    stylebuf.remove_selection();
+    char* text = textbuf.text();
+    char* styles = new char[textbuf.length() + 1];
+    memset(styles, 'A', textbuf.length());
+    styles[textbuf.length()] = '\0';
+    style_parse(text, styles, textbuf.length());
+    stylebuf.text(styles);
+    free(text);
+    delete[] styles;
 }
 
 void save_file(const char *newfile) {
@@ -287,8 +330,209 @@ void save_file(const char *newfile) {
     textbuf.call_modify_callbacks();
 }
 
+int compare_keywords(const void *p1, const void *p2) {
+  return strcmp(*(const char **)p1, *(const char **)p2);
+}
 
-// EditorWindow Implementation 
+void style_parse(const char *text, char *style, int length) {
+  char             current;
+  int              col;
+  int              last;
+  char             buf[255],
+                   *bufptr;
+  const char       *temp;
+  int              i;
+  const char       **keyword;
+
+  for (current = *style, col = 0, last = 0; length > 0; length --, text ++) {
+    if (current == 'A') {
+      if (col == 0 && *text == '#') {
+        current = 'E';
+      } else if (strncmp(text, "//", 2) == 0) {
+        current = 'B';
+        for (i = 0; i < 2; i++) {
+          if (length > 0) {
+            *style++ = current; text++; length--; col++;
+          }
+        }
+        if (length == 0) break;
+      } else if (strncmp(text, "/*", 2) == 0) {
+        current = 'C';
+        for (i = 0; i < 2; i++) {
+          if (length > 0) {
+            *style++ = current; text++; length--; col++;
+          }
+        }
+         if (length == 0) break;
+     } else if (strncmp(text, "\\\"", 2) == 0) {
+        *style++ = current;
+        *style++ = current;
+        text ++;
+        length --;
+        col += 2;
+        if (length == 0) break;
+        continue;
+      } else if (*text == '\"') {
+        current = 'D';
+      } else if (!last && isalpha(*text)) {
+        for (temp = text, bufptr = buf;
+             (isalnum(*temp) || *temp == '_') && bufptr < (buf + sizeof(buf) - 1);
+             *bufptr++ = *temp++);
+        *bufptr = '\0';
+
+        bufptr = buf;
+
+        keyword = (const char **)bsearch(&bufptr, code_types,
+                      sizeof(code_types) / sizeof(code_types[0]),
+                      sizeof(code_types[0]), compare_keywords);
+
+        if (keyword != NULL) {
+          current = 'F';
+        } else {
+          keyword = (const char **)bsearch(&bufptr, code_keywords,
+                           sizeof(code_keywords) / sizeof(code_keywords[0]),
+                           sizeof(code_keywords[0]), compare_keywords);
+          if (keyword != NULL) {
+             current = 'G';
+          }
+        }
+
+        if (current == 'F' || current == 'G') {
+            int keyword_len = (int)strlen(buf);
+            for (i = 0; i < keyword_len; i++) {
+                 *style++ = current;
+            }
+            text += keyword_len - 1;
+            length -= keyword_len -1;
+            col += keyword_len;
+            last = 1;
+            current = 'A';
+            continue;
+        }
+      }
+    } else if (current == 'C' && strncmp(text, "*/", 2) == 0) {
+      *style++ = current;
+      *style++ = current;
+      text ++;
+      length --;
+      current = 'A';
+      col += 2;
+      if (length == 0) break;
+      continue;
+    } else if (current == 'D') {
+      if (strncmp(text, "\\\"", 2) == 0) {
+        *style++ = current;
+        *style++ = current;
+        text ++;
+        length --;
+        col += 2;
+        if (length == 0) break;
+        continue;
+      } else if (*text == '\"') {
+        *style++ = current;
+        col ++;
+        current = 'A';
+        continue;
+      }
+    }
+
+    *style++ = current;
+    col ++;
+
+    last = isalnum(*text) || *text == '_';
+
+    if (*text == '\n') {
+      col = 0;
+      if (current == 'B' || current == 'E') current = 'A';
+    }
+  }
+}
+
+void style_update(int pos, int nInserted, int nDeleted, int, const char*, void *cbArg) {
+  int start, end;
+  char *style = NULL;
+  char *text = NULL;
+
+  if (nInserted == 0 && nDeleted == 0) {
+    stylebuf.unselect();
+    return;
+  }
+
+  if (nInserted > 0) {
+    style = new char[nInserted + 1];
+    memset(style, 'A', nInserted);
+    style[nInserted] = '\0';
+    stylebuf.replace(pos, pos + nDeleted, style);
+    delete[] style;
+    style = NULL;
+  } else {
+    stylebuf.remove(pos, pos + nDeleted);
+  }
+
+  stylebuf.select(pos, pos + nInserted - nDeleted);
+
+  start = textbuf.line_start(pos);
+  end = textbuf.line_end(pos + nInserted);
+
+  int text_len = textbuf.length();
+  if (end > text_len) end = text_len;
+
+  int current_style_char_pos = stylebuf.length() > start ? start : stylebuf.length() -1;
+  if (current_style_char_pos < 0) current_style_char_pos = 0;
+  char current_style_char = stylebuf.length() > 0 ? stylebuf.character(current_style_char_pos) : 'A';
+
+  if (current_style_char == 'C') {
+      int comment_start = start;
+      while (comment_start > 0) {
+          if (stylebuf.character(comment_start - 1) == 'C' &&
+              textbuf.character(comment_start - 1) == '*' &&
+              textbuf.character(comment_start - 2) == '/') {
+               break;
+           }
+           comment_start--;
+      }
+      start = textbuf.line_start(comment_start);
+  }
+
+  text = textbuf.text_range(start, end);
+  if (!text) goto cleanup;
+
+  style = stylebuf.text_range(start, end);
+  if (!style) goto cleanup;
+
+  char last_style_before_parse = (end > start && end <= stylebuf.length()) ? stylebuf.character(end - 1) : 'A';
+
+  style_parse(text, style, end - start);
+
+  stylebuf.replace(start, end, style);
+  ((Fl_Text_Editor *)cbArg)->redisplay_range(start, end);
+
+  char last_style_after_parse = (end > start) ? style[end - start - 1] : 'A';
+
+  if (last_style_after_parse != last_style_before_parse || last_style_after_parse == 'C') {
+      int rest_start = end;
+      int rest_end = textbuf.length();
+      if (rest_start < rest_end) {
+          free(text); text = NULL;
+          free(style); style = NULL;
+
+          text = textbuf.text_range(rest_start, rest_end);
+           if (!text) goto cleanup;
+
+          style = stylebuf.text_range(rest_start, rest_end);
+           if (!style) goto cleanup;
+
+          style_parse(text, style, rest_end - rest_start);
+
+          stylebuf.replace(rest_start, rest_end, style);
+          ((Fl_Text_Editor *)cbArg)->redisplay_range(rest_start, rest_end);
+      }
+  }
+
+cleanup:
+  free(text);
+  free(style);
+}
 
 EditorWindow::EditorWindow(int W, int H, const char* title)
     : Fl_Double_Window(W, H, title) {
@@ -322,12 +566,17 @@ EditorWindow::EditorWindow(int W, int H, const char* title)
 
     editor = new Fl_Text_Editor(0, 30, W, H - 30);
     editor->buffer(&textbuf);
-    editor->textfont(FL_COURIER);
-    editor->textsize(14);
+    editor->textfont(styletable[0].font);
+    editor->textsize(styletable[0].size);
+
+    editor->highlight_data(&stylebuf, styletable,
+                           sizeof(styletable) / sizeof(styletable[0]),
+                           'A', 0, 0);
 
     this->resizable(editor);
     this->size_range(300, 200);
 
+    textbuf.add_modify_callback(style_update, editor);
     textbuf.add_modify_callback(changed_cb, this);
     textbuf.call_modify_callbacks();
 
@@ -349,7 +598,6 @@ EditorWindow::EditorWindow(int W, int H, const char* title)
     this->callback((Fl_Callback *)quit_cb, this);
 }
 
-
 int main(int argc, char **argv) {
     EditorWindow win(800, 600, "Untitled");
 
@@ -357,8 +605,9 @@ int main(int argc, char **argv) {
 
     if (argc > 1) {
         load_file(argv[1]);
+    } else {
+         textbuf.call_modify_callbacks();
     }
 
     return Fl::run();
 }
-
