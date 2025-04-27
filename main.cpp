@@ -21,13 +21,13 @@ Fl_Text_Buffer textbuf;
 Fl_Text_Buffer stylebuf;
 
 Fl_Text_Display::Style_Table_Entry styletable[] = {
-  { FL_BLACK,      FL_COURIER,        14 },
-  { FL_DARK_GREEN, FL_COURIER_ITALIC, 14 },
-  { FL_DARK_GREEN, FL_COURIER_ITALIC, 14 },
-  { FL_BLUE,       FL_COURIER,        14 },
-  { FL_DARK_RED,   FL_COURIER,        14 },
-  { FL_DARK_RED,   FL_COURIER_BOLD,   14 },
-  { FL_BLUE,       FL_COURIER_BOLD,   14 }
+  { FL_BLACK,      FL_COURIER,        14 }, // A - Plain
+  { FL_DARK_GREEN, FL_COURIER_ITALIC, 14 }, // B - Line comments
+  { FL_DARK_GREEN, FL_COURIER_ITALIC, 14 }, // C - Block comments
+  { FL_BLUE,       FL_COURIER,        14 }, // D - Strings
+  { FL_DARK_RED,   FL_COURIER,        14 }, // E - Directives
+  { FL_DARK_RED,   FL_COURIER_BOLD,   14 }, // F - Types
+  { FL_BLUE,       FL_COURIER_BOLD,   14 }  // G - Keywords
 };
 
 const char *code_keywords[] = {
@@ -311,13 +311,17 @@ void load_file(const char *newfile, int ipos) {
     stylebuf.select(0, stylebuf.length());
     stylebuf.remove_selection();
     char* text = textbuf.text();
-    char* styles = new char[textbuf.length() + 1];
-    memset(styles, 'A', textbuf.length());
-    styles[textbuf.length()] = '\0';
-    style_parse(text, styles, textbuf.length());
-    stylebuf.text(styles);
-    free(text);
-    delete[] styles;
+    // Check if text allocation succeeded
+    if (text) {
+        int text_len_val = textbuf.length();
+        char* styles = new char[text_len_val + 1];
+        memset(styles, 'A', text_len_val);
+        styles[text_len_val] = '\0';
+        style_parse(text, styles, text_len_val);
+        stylebuf.text(styles);
+        free(text); // Free allocated text
+        delete[] styles; // Free allocated styles
+    }
 }
 
 void save_file(const char *newfile) {
@@ -344,7 +348,13 @@ void style_parse(const char *text, char *style, int length) {
   int              i;
   const char       **keyword;
 
-  for (current = *style, col = 0, last = 0; length > 0; length --, text ++) {
+  // Ensure style points to a valid buffer of sufficient size
+  if (!style) return;
+
+  // Use a temporary pointer to iterate through the style buffer
+  char* style_ptr = style;
+
+  for (current = *style_ptr, col = 0, last = 0; length > 0; length --, text ++) {
     if (current == 'A') {
       if (col == 0 && *text == '#') {
         current = 'E';
@@ -352,22 +362,24 @@ void style_parse(const char *text, char *style, int length) {
         current = 'B';
         for (i = 0; i < 2; i++) {
           if (length > 0) {
-            *style++ = current; text++; length--; col++;
+            *style_ptr++ = current; text++; length--; col++;
           }
         }
         if (length == 0) break;
+        text--; length++; // Decrement text/length back to start of loop increment
       } else if (strncmp(text, "/*", 2) == 0) {
         current = 'C';
         for (i = 0; i < 2; i++) {
           if (length > 0) {
-            *style++ = current; text++; length--; col++;
+            *style_ptr++ = current; text++; length--; col++;
           }
         }
          if (length == 0) break;
+         text--; length++; // Decrement text/length back to start of loop increment
      } else if (strncmp(text, "\\\"", 2) == 0) {
-        *style++ = current;
-        *style++ = current;
-        text ++;
+        *style_ptr++ = current;
+        *style_ptr++ = current;
+        text ++; // Skip the next character as well
         length --;
         col += 2;
         if (length == 0) break;
@@ -381,39 +393,40 @@ void style_parse(const char *text, char *style, int length) {
         *bufptr = '\0';
 
         bufptr = buf;
+        char matched_style = 'A'; // Default if no match
 
         keyword = (const char **)bsearch(&bufptr, code_types,
                       sizeof(code_types) / sizeof(code_types[0]),
                       sizeof(code_types[0]), compare_keywords);
 
         if (keyword != NULL) {
-          current = 'F';
+          matched_style = 'F'; // Type style
         } else {
           keyword = (const char **)bsearch(&bufptr, code_keywords,
                            sizeof(code_keywords) / sizeof(code_keywords[0]),
                            sizeof(code_keywords[0]), compare_keywords);
           if (keyword != NULL) {
-             current = 'G';
+             matched_style = 'G'; // Keyword style
           }
         }
 
-        if (current == 'F' || current == 'G') {
+        if (matched_style != 'A') {
             int keyword_len = (int)strlen(buf);
             for (i = 0; i < keyword_len; i++) {
-                 *style++ = current;
+                 *style_ptr++ = matched_style;
             }
             text += keyword_len - 1;
             length -= keyword_len -1;
             col += keyword_len;
             last = 1;
-            current = 'A';
-            continue;
+            current = 'A'; // Reset to default after keyword/type
+            continue; // Continue outer loop
         }
       }
     } else if (current == 'C' && strncmp(text, "*/", 2) == 0) {
-      *style++ = current;
-      *style++ = current;
-      text ++;
+      *style_ptr++ = current;
+      *style_ptr++ = current;
+      text ++; // Skip the next char
       length --;
       current = 'A';
       col += 2;
@@ -421,118 +434,164 @@ void style_parse(const char *text, char *style, int length) {
       continue;
     } else if (current == 'D') {
       if (strncmp(text, "\\\"", 2) == 0) {
-        *style++ = current;
-        *style++ = current;
-        text ++;
+        *style_ptr++ = current;
+        *style_ptr++ = current;
+        text ++; // Skip next char
         length --;
         col += 2;
         if (length == 0) break;
         continue;
       } else if (*text == '\"') {
-        *style++ = current;
+        *style_ptr++ = current; // Style the quote itself
         col ++;
-        current = 'A';
+        current = 'A'; // Back to default
         continue;
       }
     }
 
-    *style++ = current;
+    *style_ptr++ = current;
     col ++;
 
     last = isalnum(*text) || *text == '_';
 
     if (*text == '\n') {
       col = 0;
-      if (current == 'B' || current == 'E') current = 'A';
+      if (current == 'B' || current == 'E') current = 'A'; // Line comments/directives end at newline
     }
   }
 }
+
 
 void style_update(int pos, int nInserted, int nDeleted, int, const char*, void *cbArg) {
   int start, end;
   char *style = NULL;
   char *text = NULL;
+  // Declare variables needed after goto target here
+  char last_style_before_parse = 'A';
+  char last_style_after_parse = 'A';
 
   if (nInserted == 0 && nDeleted == 0) {
     stylebuf.unselect();
     return;
   }
 
+  // --- Handle buffer modification ---
   if (nInserted > 0) {
+    // Insert 'A' style characters for the inserted text
     style = new char[nInserted + 1];
     memset(style, 'A', nInserted);
     style[nInserted] = '\0';
+    // Replace the deleted style chars with the new inserted style chars
     stylebuf.replace(pos, pos + nDeleted, style);
     delete[] style;
-    style = NULL;
+    style = NULL; // Reset pointer
   } else {
+    // Just delete style characters
     stylebuf.remove(pos, pos + nDeleted);
   }
 
-  stylebuf.select(pos, pos + nInserted - nDeleted);
+  // --- Determine range to re-parse ---
+  stylebuf.unselect(); // Unselect for parsing
 
   start = textbuf.line_start(pos);
-  end = textbuf.line_end(pos + nInserted);
+  end = textbuf.line_end(pos + nInserted); // Use end of inserted text
 
   int text_len = textbuf.length();
   if (end > text_len) end = text_len;
 
-  int current_style_char_pos = stylebuf.length() > start ? start : stylebuf.length() -1;
-  if (current_style_char_pos < 0) current_style_char_pos = 0;
-  char current_style_char = stylebuf.length() > 0 ? stylebuf.character(current_style_char_pos) : 'A';
-
-  if (current_style_char == 'C') {
+  // Check if we are inside a C-style comment before the change
+  int style_len = stylebuf.length();
+  int check_pos = start > 0 ? start - 1 : 0; // Position to check style before start
+  if (check_pos < style_len && stylebuf.byte_at(check_pos) == 'C') {
+      // We might be inside a C comment, extend start backwards to find the beginning '/*'
       int comment_start = start;
-      while (comment_start > 0) {
-          if (stylebuf.character(comment_start - 1) == 'C' &&
-              textbuf.character(comment_start - 1) == '*' &&
-              textbuf.character(comment_start - 2) == '/') {
+      while(comment_start > 0) {
+          // Check for '*/' ending the comment *before* our position
+          if (stylebuf.byte_at(comment_start -1) == 'C' &&
+              textbuf.byte_at(comment_start - 1) == '/' &&
+              textbuf.byte_at(comment_start - 2) == '*') {
+              break; // Found end of previous comment, start is correct
+          }
+           // Check for '/*' starting the comment
+          if (stylebuf.byte_at(comment_start -1) == 'C' &&
+              textbuf.byte_at(comment_start - 1) == '*' &&
+              textbuf.byte_at(comment_start - 2) == '/') {
+               start = textbuf.line_start(comment_start - 2); // Found start, adjust line start
                break;
            }
-           comment_start--;
+          comment_start--;
       }
-      start = textbuf.line_start(comment_start);
+       if (comment_start == 0) { // Scanned all the way back
+           start = 0;
+       }
   }
 
+
+  // --- Parse the primary affected range ---
   text = textbuf.text_range(start, end);
-  if (!text) goto cleanup;
+  if (!text) goto cleanup; // Allocation failed or range invalid
 
   style = stylebuf.text_range(start, end);
-  if (!style) goto cleanup;
+  if (!style) goto cleanup; // Allocation failed or range invalid
 
-  char last_style_before_parse = (end > start && end <= stylebuf.length()) ? stylebuf.character(end - 1) : 'A';
+  // Get style at end before parsing (if possible)
+  if (end > start && end <= style_len) {
+      last_style_before_parse = stylebuf.byte_at(end - 1);
+  } else if (style_len > 0 && start == end) { // Handle insertion at end
+      last_style_before_parse = stylebuf.byte_at(style_len - 1);
+  } else {
+      last_style_before_parse = 'A';
+  }
 
+  // Parse the segment
   style_parse(text, style, end - start);
 
+  // Replace the style buffer segment
   stylebuf.replace(start, end, style);
+  // Request redisplay of the changed range
   ((Fl_Text_Editor *)cbArg)->redisplay_range(start, end);
 
-  char last_style_after_parse = (end > start) ? style[end - start - 1] : 'A';
+  // Get style at end after parsing
+  if (end > start) {
+      last_style_after_parse = style[end - start - 1];
+  } else {
+      last_style_after_parse = 'A'; // Or potentially check style before insertion point
+  }
 
+
+  // --- Check if reparsing the rest of the buffer is needed ---
+  // This happens if the style at the end of the parsed region changed,
+  // OR if the last style is 'C' (unterminated block comment).
   if (last_style_after_parse != last_style_before_parse || last_style_after_parse == 'C') {
       int rest_start = end;
       int rest_end = textbuf.length();
-      if (rest_start < rest_end) {
+
+      if (rest_start < rest_end) { // Only parse if there's remaining text
           free(text); text = NULL;
           free(style); style = NULL;
 
           text = textbuf.text_range(rest_start, rest_end);
-           if (!text) goto cleanup;
+           if (!text) goto cleanup; // Allocation failed
 
           style = stylebuf.text_range(rest_start, rest_end);
-           if (!style) goto cleanup;
+           if (!style) goto cleanup; // Allocation failed
 
+          // Parse the remainder, starting with the style we ended the previous section with
+          style[0] = last_style_after_parse;
           style_parse(text, style, rest_end - rest_start);
 
+          // Replace the rest of the style buffer
           stylebuf.replace(rest_start, rest_end, style);
+          // Redisplay the rest of the buffer
           ((Fl_Text_Editor *)cbArg)->redisplay_range(rest_start, rest_end);
       }
   }
 
-cleanup:
-  free(text);
-  free(style);
+cleanup: // Label for cleanup
+  free(text); // free() handles NULL pointers safely
+  free(style); // free() handles NULL pointers safely
 }
+
 
 EditorWindow::EditorWindow(int W, int H, const char* title)
     : Fl_Double_Window(W, H, title) {
@@ -576,8 +635,10 @@ EditorWindow::EditorWindow(int W, int H, const char* title)
     this->resizable(editor);
     this->size_range(300, 200);
 
+    // Add modify callbacks AFTER setting highlight_data
     textbuf.add_modify_callback(style_update, editor);
     textbuf.add_modify_callback(changed_cb, this);
+    // Call initial callbacks *after* adding them
     textbuf.call_modify_callbacks();
 
     replace_dlg = new Fl_Window(300, 105, "Replace");
@@ -606,8 +667,10 @@ int main(int argc, char **argv) {
     if (argc > 1) {
         load_file(argv[1]);
     } else {
+         // Ensure styling is applied even for an empty initial buffer
          textbuf.call_modify_callbacks();
     }
 
     return Fl::run();
 }
+
