@@ -1,8 +1,0 @@
-#include <iostream>
-
-using namespace std;
-
-int main() {
-	cout << "Hello my guy." << endl;
-return 0; // i think this is a comment. i dont actually know how to code
-}
