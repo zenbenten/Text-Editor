@@ -243,14 +243,5 @@ void close_cb(Fl_Widget* /*w*/, void* v) { // Close View (also window close)
     // Use Fl::delete_widget to safely delete the window later in the event loop
     // This prevents issues if the callback was triggered during event handling
     Fl::delete_widget(window_to_close);
-
-    // Check if the list *will* be empty after deletion (or already is)
-    // This check is slightly problematic because deletion is deferred.
-    // A better approach might be needed if immediate exit is critical.
-    // For now, assume Fl::run() will exit if no windows are left.
-    // if (windows.size() == 1 && windows[0] == window_to_close) {
-    //     // This logic is flawed due to deferred deletion.
-    //     // Rely on FLTK exiting when no windows are shown.
-    // }
 }
 
