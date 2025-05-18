@@ -1,9 +1,32 @@
-A FLTK-based text editor implemented in C++. It provides a minimal GUI for editing plain text files with a menu bar for common actions. Supports standard file and edit operations like new, open, save, cut/copy/paste etc. Includes search and replace dialogs. Supports change tracking for unsaved edits. It also adds features like multi-window support for multiple “views” of the same document, an Insert File command, and basic undo functionality.
-Technologies Used
-C++: The core logic and UI.
-FLTK (Fast Light Toolkit): A cross-platform C++ GUI toolkit. All windows, buttons, menus, text editor widgets, and dialogs are from FLTK.
-Standard Libraries: Uses standard C libraries for file I/O and string handling (<stdio.h>, <string.h>, etc.), and <FL/fl_ask.H> for alert dialogs.
-Known Limitations
-Basic functionality: This is a simple editor intended for plain text. It does not support multiple documents in one window or advanced text features (no tabs, no spell-check, etc.).
-Undo support: Only basic undo is provided. There is no multi-level redo or history beyond the most recent change.
-Error handling: The editor assumes valid text files. Open very large/non-text files at your own risk.
+# FLTK Text Editor  
+*A lightweight, cross-platform text editor built with C++ and FLTK.*  
+
+
+##  Description  
+A minimal GUI text editor written in C++ using the **FLTK (Fast Light Toolkit)**. Designed for plain text editing with essential features like:  
+- File operations (New, Open, Save)  
+- Edit commands (Cut, Copy, Paste, Undo)  
+- Search & Replace dialogs  
+- Multi-window support for the same document  
+- Insert File command  
+- Basic change tracking for unsaved edits  
+
+##  Features  
+- **Cross-platform** (Windows, Linux, macOS)  
+- **Lightweight** (No bloat, just text editing)  
+- **Multi-Window Support** Edit the same file in multiple views  
+- **Basic Undo** Revert recent changes  
+- **Insert File** Embed contents of another file  
+
+##  Technologies Used  
+- **C++** (Core logic and UI)  
+- **FLTK** (GUI toolkit for windows, buttons, menus, and dialogs)  
+- **Standard Libraries**  
+  - `<stdio.h>` (File I/O)  
+  - `<string.h>` (String handling)  
+  - `<FL/fl_ask.H>` (Alert dialogs)  
+
+##  Known Limitations  
+- **Basic text-only** – No rich text, tabs, or spell-check.  
+- **Single-level undo** – No redo or undo history.  
+- **No large file support** – Avoid opening huge/non-text files.  
