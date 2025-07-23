@@ -1,3 +1,4 @@
+![Demo of the editor in action](assets/example.gif)
 # FLTK Text Editor  
 *A lightweight, cross-platform text editor built with C++ and FLTK.*  
 
