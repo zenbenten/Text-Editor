@@ -4,7 +4,7 @@
 
 
 ##  Description  
-A minimal GUI text editor written in C++ using the **FLTK (Fast Light Toolkit)**. Designed for plain text editing with essential features like:  
+A minimal GUI text editor written in C++ using the **FLTK (Fast Light Toolkit)**. Designed for plain text editing with features like:  
 - File operations (New, Open, Save)  
 - Edit commands (Cut, Copy, Paste, Undo)  
 - Search & Replace dialogs  
@@ -27,7 +27,7 @@ A minimal GUI text editor written in C++ using the **FLTK (Fast Light Toolkit)**
   - `<string.h>` (String handling)  
   - `<FL/fl_ask.H>` (Alert dialogs)  
 
-##  Known Limitations  
+##  Limitations  
 - **Basic text-only** – No rich text, tabs, or spell-check.  
 - **Single-level undo** – No redo or undo history.  
 - **No large file support** – Avoid opening huge/non-text files.  
